@@ -54,7 +54,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
   ];
 
   constructor() {
-    this.apiKey = process.env.ALPHA_VANTAGE_API_KEY || "VUYJFOT0PQEKICHR";
+    this.apiKey = process.env.ALPHA_VANTAGE_API_KEY || "QEOYNEKDUEHZTJ8X";
     if (!this.apiKey || this.apiKey === "demo") {
       this.logger.warn(
         "Alpha Vantage API key not configured. Using demo key (limited requests)."
