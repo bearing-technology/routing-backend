@@ -20,6 +20,15 @@ interface AlphaVantageResponse {
   Information?: string;
 }
 
+// A simple in-memory cache for the last good quotes, scoped per instance.
+const alphaVantageQuoteCache: {
+  lastQuotes: OTCQuote[];
+  lastFetchedTimestamp: number;
+} = {
+  lastQuotes: [],
+  lastFetchedTimestamp: 0,
+};
+
 @Injectable()
 export class AlphaVantageProvider implements OtcQuoteProvider {
   private readonly logger = new Logger(AlphaVantageProvider.name);
@@ -67,6 +76,8 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
     > = {};
     const now = Date.now();
 
+    let failed = false;
+
     for (let i = 0; i < this.currencyPairs.length; i++) {
       const pair = this.currencyPairs[i];
 
@@ -95,6 +106,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
         this.logger.error(
           `Failed to fetch quote for ${pair.from} → ${pair.to}: ${error?.message}`
         );
+        failed = true;
       }
     }
 
@@ -127,10 +139,34 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
       quotes.push(quote);
     });
 
-    this.logger.log(
-      `Fetched ${quotes.length}/${this.currencyPairs.length} quotes from Alpha Vantage`
-    );
-    return quotes;
+    if (
+      quotes.length === this.currencyPairs.length * 2 ||
+      (quotes.length >= this.currencyPairs.length &&
+        !failed &&
+        quotes.length > 0)
+    ) {
+      // update cache with new successful quotes
+      alphaVantageQuoteCache.lastQuotes = quotes;
+      alphaVantageQuoteCache.lastFetchedTimestamp = Date.now();
+      this.logger.log(
+        `Fetched ${quotes.length}/${this.currencyPairs.length} quotes from Alpha Vantage`
+      );
+      return quotes;
+    } else if (alphaVantageQuoteCache.lastQuotes.length > 0) {
+      // Use cached quotes
+      this.logger.warn(
+        `Alpha Vantage fetch failed. Using cached quotes from ${new Date(
+          alphaVantageQuoteCache.lastFetchedTimestamp
+        ).toISOString()} (${alphaVantageQuoteCache.lastQuotes.length} pairs)`
+      );
+      return alphaVantageQuoteCache.lastQuotes;
+    } else {
+      // complete failure and no cache
+      this.logger.error(
+        "Could not fetch Alpha Vantage quotes and no previous quotes in cache."
+      );
+      return [];
+    }
   }
 
   private async fetchQuote(
