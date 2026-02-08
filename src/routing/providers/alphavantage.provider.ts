@@ -139,29 +139,58 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
       quotes.push(quote);
     });
 
-    if (
-      quotes.length === this.currencyPairs.length * 2 ||
-      (quotes.length >= this.currencyPairs.length &&
-        !failed &&
-        quotes.length > 0)
-    ) {
-      // update cache with new successful quotes
-      alphaVantageQuoteCache.lastQuotes = quotes;
+    // Always update cache with any quotes we successfully fetched, even on partial failures
+    // This ensures we preserve quotes even if some pairs fail
+    if (quotes.length > 0) {
+      // Merge with cached quotes: prefer new quotes, fall back to cached for missing pairs
+      const quoteMap = new Map<string, OTCQuote>();
+      
+      // First, add all cached quotes
+      alphaVantageQuoteCache.lastQuotes.forEach((quote) => {
+        const key = `${quote.fromToken}-${quote.toToken}`;
+        quoteMap.set(key, quote);
+      });
+      
+      // Then, overwrite with any new quotes we just fetched
+      quotes.forEach((quote) => {
+        const key = `${quote.fromToken}-${quote.toToken}`;
+        quoteMap.set(key, quote);
+      });
+      
+      // Update cache with merged quotes
+      alphaVantageQuoteCache.lastQuotes = Array.from(quoteMap.values());
       alphaVantageQuoteCache.lastFetchedTimestamp = Date.now();
-      this.logger.log(
-        `Fetched ${quotes.length}/${this.currencyPairs.length} quotes from Alpha Vantage`
-      );
-      return quotes;
+      
+      if (quotes.length === this.currencyPairs.length * 2) {
+        // Complete success
+        this.logger.log(
+          `Fetched ${quotes.length} quotes from Alpha Vantage (all pairs)`
+        );
+        return quotes;
+      } else if (failed) {
+        // Partial failure - return merged quotes
+        const mergedQuotes = Array.from(quoteMap.values());
+        this.logger.warn(
+          `Partial fetch: got ${quotes.length} new quotes, ${mergedQuotes.length} total (merged with cache)`
+        );
+        return mergedQuotes;
+      } else {
+        // Some quotes but no failures (might be rate limited)
+        this.logger.log(
+          `Fetched ${quotes.length}/${this.currencyPairs.length * 2} quotes from Alpha Vantage`
+        );
+        return quotes;
+      }
     } else if (alphaVantageQuoteCache.lastQuotes.length > 0) {
-      // Use cached quotes
+      // Complete failure but we have cached quotes
       this.logger.warn(
-        `Alpha Vantage fetch failed. Using cached quotes from ${new Date(
+        `Alpha Vantage fetch failed completely. Using cached quotes from ${new Date(
           alphaVantageQuoteCache.lastFetchedTimestamp
         ).toISOString()} (${alphaVantageQuoteCache.lastQuotes.length} pairs)`
       );
       return alphaVantageQuoteCache.lastQuotes;
     } else {
-      // complete failure and no cache
+      // Complete failure and no cache
       this.logger.error(
         "Could not fetch Alpha Vantage quotes and no previous quotes in cache."
       );
