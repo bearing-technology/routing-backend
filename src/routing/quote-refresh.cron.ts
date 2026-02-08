@@ -55,7 +55,7 @@ export class QuoteRefreshCron {
    * Refresh mock providers more frequently (every 30 seconds)
    * This keeps mock data fresh while Alpha Vantage runs every minute
    */
-  @Cron("*/30 * * * * *") // Every 30 seconds
+  @Cron("0 */58 0-23 * * *") // Every 58 minutes (max ~25x per day)
   async refreshMockQuotes() {
     try {
       // Access providers through the prefetcher's private field

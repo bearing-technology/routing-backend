@@ -79,6 +79,7 @@ export class SettlementScoringService {
     return timePenalty;
   }
 
+
   /**
    * Get average counterparty risk for all quotes in route
    */

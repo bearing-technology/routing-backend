@@ -1,11 +1,3 @@
-/**
- * Standalone test script to verify routing endpoints work with mock data
- *
- * Run with: npx ts-node test-routing-endpoints.ts
- *
- * Make sure the server is running on http://localhost:8080
- */
-
 import axios from "axios";
 
 const BASE_URL = "http://localhost:8080/routing";
