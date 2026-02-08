@@ -26,7 +26,7 @@ export class QuoteRefreshCron {
    * Fetches all configured currency pairs (BRL→USD, MXN→USD, NGN→EUR, etc.)
    * Provider handles rate limiting internally (1.2s delay between requests)
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron("0 */58 0-23 * * *") 
   async refreshAlphaVantageQuotes() {
     if (!this.alphaVantageProvider) {
       // Alpha Vantage provider not configured, skip
