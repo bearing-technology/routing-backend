@@ -32,7 +32,7 @@ export class OtcRoutingService {
   async cacheQuote(quote: OTCQuote): Promise<void> {
     const ttlMs = Math.max(
       OtcRoutingService.MIN_TTL_MS,
-      quote.expiry - Date.now()
+      quote.expiry - Date.now(),
     );
 
     // Use different key pattern for DEX vs OTC
@@ -43,7 +43,7 @@ export class OtcRoutingService {
         "solana",
         quote.fromToken,
         quote.toToken,
-        quote.venueId
+        quote.venueId,
       );
     } else {
       // OTC quotes use the standard pattern
@@ -71,7 +71,7 @@ export class OtcRoutingService {
           "solana",
           quote.fromToken,
           quote.toToken,
-          quote.venueId
+          quote.venueId,
         );
       } else {
         // OTC quotes use the standard pattern
@@ -258,7 +258,7 @@ export class OtcRoutingService {
     } catch (error) {
       this.logger.error(
         `Failed to get best route: ${error?.message}`,
-        error?.stack
+        error?.stack,
       );
       // Always return an object, even on error
       return {
@@ -274,7 +274,7 @@ export class OtcRoutingService {
    */
   private async loadQuotes(
     fromToken: string,
-    toToken: string
+    toToken: string,
   ): Promise<MaybeQuote[]> {
     try {
       const allKeys: string[] = [];
@@ -288,6 +288,7 @@ export class OtcRoutingService {
       const dexPattern = `routing:edge:solana:${fromToken}:${toToken}:dex:*`;
       const dexKeys = await this.scanKeys(dexPattern);
       allKeys.push(...dexKeys);
+      allKeys.push("otc:quotes:awesomeapi");
 
       if (!allKeys.length) return [];
 
@@ -307,7 +308,7 @@ export class OtcRoutingService {
         .filter((q): q is OTCQuote => q !== null);
     } catch (error) {
       this.logger.error(
-        `Failed to load quotes for ${fromToken} → ${toToken}: ${error?.message}`
+        `Failed to load quotes for ${fromToken} → ${toToken}: ${error?.message}`,
       );
       return [];
     }
@@ -328,7 +329,7 @@ export class OtcRoutingService {
           "MATCH",
           pattern,
           "COUNT",
-          100 // Process 100 keys at a time
+          100, // Process 100 keys at a time
         );
         cursor = nextCursor;
         keys.push(...foundKeys);
@@ -359,7 +360,7 @@ export class OtcRoutingService {
    */
   async getCachedQuotes(
     fromToken: string,
-    toToken: string
+    toToken: string,
   ): Promise<OTCQuote[]> {
     const quotes = await this.loadQuotes(fromToken, toToken);
     // Filter out nulls defensively and ensure proper typing
@@ -369,7 +370,7 @@ export class OtcRoutingService {
   private toRouteStep(
     quote: OTCQuote,
     amountIn: number,
-    amountOut: number
+    amountOut: number,
   ): RouteStep {
     return {
       fromToken: quote.fromToken,
