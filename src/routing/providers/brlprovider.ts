@@ -166,6 +166,7 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
         };
       }
     } catch (error: any) {
+      this.logger.warn(error);
       failed = true;
       if (axios.isAxiosError(error)) {
         if (error.code === "ECONNABORTED") {
