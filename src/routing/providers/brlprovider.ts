@@ -85,6 +85,8 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
         .map((pair) => `${pair.from}-${pair.to}`)
         .join(",");
 
+      console.log(pairPaths);
+
       const response = await axios.get<AwesomeApiResponse>(
         `${this.baseUrl}/${pairPaths}`,
         {
