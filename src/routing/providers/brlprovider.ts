@@ -32,8 +32,9 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
   private readonly logger = new Logger(BrlProvider.name);
   readonly venueId = "fx:awesomeapi-brl";
 
+  // AwesomeAPI FX endpoint, supports multiple pairs in a single request:
+  // e.g. https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,EUR-USD
   private readonly baseUrl = "https://economia.awesomeapi.com.br/last";
-  private readonly rateLimitDelayMs = 1200;
 
   // Pairs as provided by AwesomeAPI: USD-BRL, EUR-BRL, EUR-USD
   private readonly currencyPairs: Array<{
@@ -55,7 +56,7 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
       this.logger.log("Prefetched AwesomeAPI BRL quotes on module init");
     } catch (error: any) {
       this.logger.error(
-        `Failed to prefetch Alpha Vantage quotes on module init: ${
+        `Failed to prefetch AwesomeAPI BRL quotes on module init: ${
           error?.message ?? error
         }`,
       );
@@ -78,35 +79,107 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
 
     let failed = false;
 
-    for (let i = 0; i < this.currencyPairs.length; i++) {
-      const pair = this.currencyPairs[i];
+    try {
+      // Build combined path: USD-BRL,EUR-BRL,EUR-USD
+      const pairPaths = this.currencyPairs
+        .map((pair) => `${pair.from}-${pair.to}`)
+        .join(",");
 
-      if (i > 0) {
-        await this.delay(this.rateLimitDelayMs);
-      }
+      const response = await axios.get<AwesomeApiResponse>(
+        `${this.baseUrl}/${pairPaths}`,
+        {
+          timeout: 5000, // 5s timeout
+        },
+      );
 
-      try {
-        const quote = await this.fetchQuote(pair.from, pair.to, now);
-        if (quote) {
-          quotes.push(quote);
-          const rateKey = `${pair.from}-${pair.to}`;
-          fetched[rateKey] = {
-            ask: quote.amountOut,
-            bid:
-              quote.feeBps !== undefined
-                ? quote.amountOut -
-                  (quote.amountOut * (quote.feeBps * 2)) / 10000
-                : quote.amountOut,
-            mid: quote.amountOut,
-            lastRefreshed: quote.lastUpdated,
-            settlementMeta: quote.settlementMeta,
-          };
+      const data = response.data;
+      console.log(data);
+
+      for (const pair of this.currencyPairs) {
+        const pairKey = `${pair.from}${pair.to}`; // e.g. USDBRL, EURBRL, EURUSD
+        const rate = data[pairKey];
+
+        if (!rate) {
+          this.logger.warn(
+            `No AwesomeAPI rate data for ${pair.from} → ${pair.to}`,
+          );
+          failed = true;
+          continue;
         }
-      } catch (error) {
+
+        const askPrice = parseFloat(rate.ask);
+        const bidPrice = parseFloat(rate.bid);
+
+        if (isNaN(askPrice) || isNaN(bidPrice)) {
+          this.logger.error(
+            `Invalid AwesomeAPI price data for ${pair.from} → ${pair.to}`,
+          );
+          failed = true;
+          continue;
+        }
+
+        const midPrice = (askPrice + bidPrice) / 2;
+        const lastRefreshedStr = rate.create_date;
+        const lastRefreshed = this.parseTimestamp(lastRefreshedStr);
+
+        const spread = ((askPrice - bidPrice) / midPrice) * 10000;
+
+        const standardAmountIn = 1;
+        const amountOut = askPrice;
+
+        const expiry = now + 60000;
+
+        const settlementMeta = this.getSettlementMeta(pair.from, pair.to);
+
+        const quote: OTCQuote = {
+          venueId: this.venueId,
+          fromToken: pair.from,
+          toToken: pair.to,
+          amountIn: standardAmountIn,
+          amountOut: amountOut,
+
+          feeBps: Math.round(spread / 2),
+          expiry: expiry,
+          lastUpdated: lastRefreshed || now,
+          settlementMeta: settlementMeta,
+        };
+
+        quotes.push(quote);
+
+        const rateKey = `${pair.from}-${pair.to}`;
+        fetched[rateKey] = {
+          ask: quote.amountOut,
+          bid:
+            quote.feeBps !== undefined
+              ? quote.amountOut - (quote.amountOut * (quote.feeBps * 2)) / 10000
+              : quote.amountOut,
+          mid: quote.amountOut,
+          lastRefreshed: quote.lastUpdated,
+          settlementMeta: quote.settlementMeta,
+        };
+      }
+    } catch (error: any) {
+      failed = true;
+      if (axios.isAxiosError(error)) {
+        if (error.code === "ECONNABORTED") {
+          this.logger.warn(
+            "Timeout fetching BRL rates from AwesomeAPI (batched request)",
+          );
+        } else if (error.response?.status === 429) {
+          this.logger.warn(
+            "Received 429 rate limit from AwesomeAPI for BRL batch request",
+          );
+        } else {
+          this.logger.error(
+            `HTTP error fetching BRL rates from AwesomeAPI: ${error.message}`,
+          );
+        }
+      } else {
         this.logger.error(
-          `Failed to fetch quote for ${pair.from} → ${pair.to}: ${error?.message}`,
+          `Unexpected error fetching BRL rates from AwesomeAPI: ${
+            error?.message ?? error
+          }`,
         );
-        failed = true;
       }
     }
 
@@ -200,88 +273,6 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
     }
   }
 
-  private async fetchQuote(
-    fromCurrency: string,
-    toCurrency: string,
-    timestamp: number,
-  ): Promise<OTCQuote | null> {
-    try {
-      const pairPath = `${fromCurrency}-${toCurrency}`;
-      const response = await axios.get<AwesomeApiResponse>(
-        `${this.baseUrl}/${pairPath}`,
-        {
-          timeout: 5000, // 5s timeout
-        },
-      );
-
-      const data = response.data;
-      const pairKey = `${fromCurrency}${toCurrency}`;
-      const rate = data[pairKey];
-
-      if (!rate) {
-        this.logger.warn(
-          `No AwesomeAPI rate data for ${fromCurrency} → ${toCurrency}`,
-        );
-        return null;
-      }
-
-      const askPrice = parseFloat(rate.ask);
-      const bidPrice = parseFloat(rate.bid);
-
-      if (isNaN(askPrice) || isNaN(bidPrice)) {
-        this.logger.error(
-          `Invalid AwesomeAPI price data for ${fromCurrency} → ${toCurrency}`,
-        );
-        return null;
-      }
-
-      const midPrice = (askPrice + bidPrice) / 2;
-      const lastRefreshedStr = rate.create_date;
-      const lastRefreshed = this.parseTimestamp(lastRefreshedStr);
-
-      const spread = ((askPrice - bidPrice) / midPrice) * 10000;
-
-      const standardAmountIn = 1;
-      const amountOut = askPrice;
-
-      const expiry = timestamp + 60000;
-
-      const settlementMeta = this.getSettlementMeta(fromCurrency, toCurrency);
-
-      const quote: OTCQuote = {
-        venueId: this.venueId,
-        fromToken: fromCurrency,
-        toToken: toCurrency,
-        amountIn: standardAmountIn,
-        amountOut: amountOut,
-
-        feeBps: Math.round(spread / 2),
-        expiry: expiry,
-        lastUpdated: lastRefreshed || timestamp,
-        settlementMeta: settlementMeta,
-      };
-
-      return quote;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.code === "ECONNABORTED") {
-          this.logger.warn(
-            `Timeout fetching ${fromCurrency} → ${toCurrency} from AwesomeAPI BRL`,
-          );
-        } else {
-          this.logger.error(
-            `HTTP error fetching ${fromCurrency} → ${toCurrency} from AwesomeAPI BRL: ${error.message}`,
-          );
-        }
-      } else {
-        this.logger.error(
-          `Unexpected error fetching ${fromCurrency} → ${toCurrency}: ${error?.message}`,
-        );
-      }
-      return null;
-    }
-  }
-
   private parseTimestamp(timestampStr: string): number {
     try {
       const date = new Date(timestampStr + " UTC");
@@ -320,9 +311,5 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
       supportsReservation: false,
       paymentMethods: ["bank_transfer", "wire_transfer"],
     };
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
