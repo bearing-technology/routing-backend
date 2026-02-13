@@ -14,6 +14,7 @@ import {
 } from "./routing/providers/example-otc.providers";
 import { DexProvider } from "./routing/providers/dex.provider";
 import { AlphaVantageProvider } from "./routing/providers/alphavantage.provider";
+import { BrlProvider } from "./routing/providers/brlprovider";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AlphaVantageProvider } from "./routing/providers/alphavantage.provider"
       new StablecoinIntermediaryProvider(),
       new DexProvider(), // Add DEX provider for pathfinding comparison
       new AlphaVantageProvider(), // Real-time FX quotes from Alpha Vantage
+      new BrlProvider(),
     ]),
   ],
   controllers: [AppController],

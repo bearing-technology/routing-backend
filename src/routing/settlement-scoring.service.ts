@@ -30,11 +30,11 @@ export class SettlementScoringService {
   calculateNetOutput(
     quotedOutput: number,
     route: RouteResult,
-    quotes: OTCQuote[]
+    quotes: OTCQuote[],
   ): number {
     // Get settlement metadata from quotes
     const maxSettlementDays = Math.max(
-      ...quotes.map((q) => q.settlementMeta?.settlementDays || 0)
+      ...quotes.map((q) => q.settlementMeta?.settlementDays || 0),
     );
 
     const avgCounterpartyRisk = this.getAverageCounterpartyRisk(quotes);
@@ -44,7 +44,7 @@ export class SettlementScoringService {
     const timePenalty = this.calculateTimePenalty(
       quotedOutput,
       maxSettlementDays,
-      volatility
+      volatility,
     );
 
     // Calculate counterparty risk discount
@@ -55,7 +55,7 @@ export class SettlementScoringService {
 
     this.logger.debug(
       `Scoring: quoted=${quotedOutput}, settlementDays=${maxSettlementDays}, ` +
-        `timePenalty=${timePenalty}, counterpartyDiscount=${counterpartyDiscount}, net=${netOutput}`
+        `timePenalty=${timePenalty}, counterpartyDiscount=${counterpartyDiscount}, net=${netOutput}`,
     );
 
     return Math.max(0, netOutput); // Ensure non-negative
@@ -67,7 +67,7 @@ export class SettlementScoringService {
   private calculateTimePenalty(
     quotedAmount: number,
     settlementDays: number,
-    dailyVolatility: number
+    dailyVolatility: number,
   ): number {
     if (settlementDays <= 0) return 0;
 
@@ -79,7 +79,6 @@ export class SettlementScoringService {
     return timePenalty;
   }
 
-
   /**
    * Get average counterparty risk for all quotes in route
    */
@@ -90,7 +89,7 @@ export class SettlementScoringService {
       (q) =>
         q.settlementMeta?.counterpartyRisk ||
         this.counterpartyRisk[q.venueId] ||
-        0.001
+        0.001,
     );
 
     return risks.reduce((a, b) => a + b, 0) / risks.length;
@@ -114,7 +113,7 @@ export class SettlementScoringService {
    */
   getScoringMetadata(
     route: RouteResult,
-    quotes: OTCQuote[]
+    quotes: OTCQuote[],
   ): {
     settlementDays: number;
     counterpartyRisk: number;
@@ -123,7 +122,7 @@ export class SettlementScoringService {
   } {
     const maxSettlementDays = Math.max(
       ...quotes.map((q) => q.settlementMeta?.settlementDays || 0),
-      0
+      0,
     );
 
     const avgCounterpartyRisk = this.getAverageCounterpartyRisk(quotes);
@@ -132,13 +131,13 @@ export class SettlementScoringService {
     const timePenalty = this.calculateTimePenalty(
       route.totalOut,
       maxSettlementDays,
-      volatility
+      volatility,
     );
 
     // Confidence based on settlement time and counterparty risk
     const confidence = Math.max(
       0,
-      Math.min(1, 1 - maxSettlementDays * 0.1 - avgCounterpartyRisk * 10)
+      Math.min(1, 1 - maxSettlementDays * 0.1 - avgCounterpartyRisk * 10),
     );
 
     return {

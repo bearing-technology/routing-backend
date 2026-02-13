@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { OtcQuotePrefetcher } from "./otc-quote.prefetcher";
 import { AlphaVantageProvider } from "./providers/alphavantage.provider";
 import { OtcRoutingService } from "./otc-routing.service";
+import { BrlProvider } from "./providers/brlprovider";
 
 /**
  * Cron job to refresh OTC quotes periodically
@@ -18,7 +19,8 @@ export class QuoteRefreshCron {
     private readonly routing: OtcRoutingService,
     @Optional()
     @Inject(AlphaVantageProvider)
-    private readonly alphaVantageProvider?: AlphaVantageProvider
+    private readonly alphaVantageProvider?: AlphaVantageProvider,
+    private readonly brlProvider?: BrlProvider,
   ) {}
 
   /**
@@ -26,28 +28,46 @@ export class QuoteRefreshCron {
    * Fetches all configured currency pairs (BRL→USD, MXN→USD, NGN→EUR, etc.)
    * Provider handles rate limiting internally (1.2s delay between requests)
    */
-  @Cron("0 */58 0-23 * * *") 
+  @Cron("0 */58 0-23 * * *")
   async refreshAlphaVantageQuotes() {
-    if (!this.alphaVantageProvider) {
-      // Alpha Vantage provider not configured, skip
-      return;
+    // Refresh Alpha Vantage quotes if configured
+    if (this.alphaVantageProvider) {
+      try {
+        this.logger.log("Refreshing Alpha Vantage currency pairs...");
+        const quotes = await this.alphaVantageProvider.fetchQuotes();
+        if (quotes.length > 0) {
+          await this.routing.cacheQuotes(quotes);
+          this.logger.log(
+            `Successfully cached ${quotes.length} Alpha Vantage quotes`,
+          );
+        } else {
+          this.logger.warn("No Alpha Vantage quotes fetched");
+        }
+      } catch (error: any) {
+        this.logger.error(
+          `Failed to refresh Alpha Vantage quotes: ${error.message}`,
+        );
+      }
     }
 
-    try {
-      this.logger.log("Refreshing Alpha Vantage currency pairs...");
-      const quotes = await this.alphaVantageProvider.fetchQuotes();
-      if (quotes.length > 0) {
-        await this.routing.cacheQuotes(quotes);
-        this.logger.log(
-          `Successfully cached ${quotes.length} Alpha Vantage quotes`
+    // Refresh BRL AwesomeAPI quotes if configured
+    if (this.brlProvider) {
+      try {
+        this.logger.log("Refreshing BRL AwesomeAPI currency pairs...");
+        const brlQuotes = await this.brlProvider.fetchQuotes();
+        if (brlQuotes.length > 0) {
+          await this.routing.cacheQuotes(brlQuotes);
+          this.logger.log(
+            `Successfully cached ${brlQuotes.length} BRL AwesomeAPI quotes`,
+          );
+        } else {
+          this.logger.warn("No BRL AwesomeAPI quotes fetched");
+        }
+      } catch (error: any) {
+        this.logger.error(
+          `Failed to refresh BRL AwesomeAPI quotes: ${error.message}`,
         );
-      } else {
-        this.logger.warn("No Alpha Vantage quotes fetched");
       }
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to refresh Alpha Vantage quotes: ${error.message}`
-      );
     }
   }
 
@@ -62,7 +82,7 @@ export class QuoteRefreshCron {
       // Filter out Alpha Vantage to avoid duplicate refreshes
       const allProviders = (this.prefetcher as any)["providers"] || [];
       const mockProviders = allProviders.filter(
-        (p: any) => p.venueId !== "fx:alphavantage"
+        (p: any) => p.venueId !== "fx:alphavantage",
       );
 
       if (mockProviders.length === 0) {
@@ -76,7 +96,7 @@ export class QuoteRefreshCron {
           await this.routing.cacheQuotes(quotes);
         } catch (err: any) {
           this.logger.error(
-            `Failed to refresh quotes for ${provider.venueId}: ${err?.message}`
+            `Failed to refresh quotes for ${provider.venueId}: ${err?.message}`,
           );
         }
       });

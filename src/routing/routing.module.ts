@@ -12,6 +12,7 @@ import { QuoteLifecycleService } from "./quote-lifecycle.service";
 import { DepositService } from "./deposit.service";
 import { SettlementScoringService } from "./settlement-scoring.service";
 import { AlphaVantageProvider } from "./providers/alphavantage.provider";
+import { BrlProvider } from "./providers/brlprovider";
 
 @Module({
   providers: [
@@ -38,8 +39,13 @@ export class RoutingModule {
   static register(providers: OtcQuoteProvider[]): DynamicModule {
     // Find Alpha Vantage provider if present
     const alphaVantageProvider = providers.find(
-      (p) => p.venueId === "fx:alphavantage"
+      (p) => p.venueId === "fx:alphavantage",
     ) as AlphaVantageProvider | undefined;
+
+    // Find BRL AwesomeAPI provider if present
+    const brlProvider = providers.find(
+      (p) => p.venueId === "fx:awesomeapi-brl",
+    ) as BrlProvider | undefined;
 
     const moduleProviders: any[] = [
       OtcRoutingService,
@@ -58,6 +64,14 @@ export class RoutingModule {
       moduleProviders.push({
         provide: AlphaVantageProvider,
         useValue: alphaVantageProvider,
+      });
+    }
+
+    // Add BRL AwesomeAPI provider to module providers if found
+    if (brlProvider) {
+      moduleProviders.push({
+        provide: BrlProvider,
+        useValue: brlProvider,
       });
     }
 
