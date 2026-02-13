@@ -16,7 +16,7 @@ export interface RedisKeys {
     chain: string,
     from: string,
     to: string,
-    venue: string
+    venue: string,
   ) => string;
 }
 
@@ -26,7 +26,7 @@ export const RedisKey: RedisKeys = {
   priceSnapshot: (v, p) => `price:${v}:${p}`,
   routingGraph: () => `routing:graph`,
   orderbook: (v) => `orderbook:${v}`,
-  otcQuote: (from, to, venue) => `quote:otc:${from}:${to}:${venue}`,
+  otcQuote: (from, to, venue) => `otc:quotes:${from}:${to}:${venue}`,
   provisionalQuote: (id) => `quote:prov:${id}`,
   reservedQuote: (id) => `quote:reserved:${id}`,
   deposit: (id) => `deposit:${id}`,
