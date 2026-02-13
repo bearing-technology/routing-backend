@@ -85,7 +85,7 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
         .map((pair) => `${pair.from}-${pair.to}`)
         .join(",");
 
-      console.log(pairPaths);
+      this.logger.error(pairPaths);
 
       const response = await axios.get<AwesomeApiResponse>(
         `${this.baseUrl}/${pairPaths}`,
@@ -95,7 +95,7 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
       );
 
       const data = response.data;
-      console.log(data);
+      this.logger.error(data);
 
       for (const pair of this.currencyPairs) {
         const pairKey = `${pair.from}${pair.to}`; // e.g. USDBRL, EURBRL, EURUSD
