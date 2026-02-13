@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { OtcQuoteProvider } from "../otc-quote.prefetcher";
 import { OTCQuote } from "src/types/routing/quotes";
 import axios from "axios";
@@ -20,7 +20,6 @@ interface AlphaVantageResponse {
   Information?: string;
 }
 
-// A simple in-memory cache for the last good quotes, scoped per instance.
 const alphaVantageQuoteCache: {
   lastQuotes: OTCQuote[];
   lastFetchedTimestamp: number;
@@ -30,7 +29,7 @@ const alphaVantageQuoteCache: {
 };
 
 @Injectable()
-export class AlphaVantageProvider implements OtcQuoteProvider {
+export class AlphaVantageProvider implements OtcQuoteProvider, OnModuleInit {
   private readonly logger = new Logger(AlphaVantageProvider.name);
   readonly venueId = "fx:alphavantage";
 
@@ -38,26 +37,34 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
   private readonly baseUrl = "https://www.alphavantage.co/query";
   private readonly rateLimitDelayMs = 1200;
 
-  // Supported currency pairs for routing
   private readonly currencyPairs: Array<{
     from: string;
     to: string;
   }> = [
     { from: "BRL", to: "USD" },
     { from: "BRL", to: "EUR" },
-    { from: "MXN", to: "USD" },
-    { from: "MXN", to: "EUR" },
-    { from: "NGN", to: "USD" },
-    { from: "NGN", to: "EUR" },
     { from: "USD", to: "EUR" },
     { from: "EUR", to: "USD" },
   ];
 
   constructor() {
-    this.apiKey = process.env.ALPHA_VANTAGE_API_KEY || "VFPTE9HEGNBTI8XY";
+    this.apiKey = process.env.ALPHA_VANTAGE_API_KEY || "H26OAVWEHT15HW4C";
     if (!this.apiKey || this.apiKey === "demo") {
       this.logger.warn(
-        "Alpha Vantage API key not configured. Using demo key (limited requests)."
+        "Alpha Vantage API key not configured. Using demo key (limited requests).",
+      );
+    }
+  }
+
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.fetchQuotes();
+      this.logger.log("Prefetched Alpha Vantage quotes on module init");
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to prefetch Alpha Vantage quotes on module init: ${
+          error?.message ?? error
+        }`,
       );
     }
   }
@@ -104,7 +111,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
         }
       } catch (error) {
         this.logger.error(
-          `Failed to fetch quote for ${pair.from} → ${pair.to}: ${error?.message}`
+          `Failed to fetch quote for ${pair.from} → ${pair.to}: ${error?.message}`,
         );
         failed = true;
       }
@@ -144,40 +151,42 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
     if (quotes.length > 0) {
       // Merge with cached quotes: prefer new quotes, fall back to cached for missing pairs
       const quoteMap = new Map<string, OTCQuote>();
-      
+
       // First, add all cached quotes
       alphaVantageQuoteCache.lastQuotes.forEach((quote) => {
         const key = `${quote.fromToken}-${quote.toToken}`;
         quoteMap.set(key, quote);
       });
-      
+
       // Then, overwrite with any new quotes we just fetched
       quotes.forEach((quote) => {
         const key = `${quote.fromToken}-${quote.toToken}`;
         quoteMap.set(key, quote);
       });
-      
+
       // Update cache with merged quotes
       alphaVantageQuoteCache.lastQuotes = Array.from(quoteMap.values());
       alphaVantageQuoteCache.lastFetchedTimestamp = Date.now();
-      
+
       if (quotes.length === this.currencyPairs.length * 2) {
         // Complete success
         this.logger.log(
-          `Fetched ${quotes.length} quotes from Alpha Vantage (all pairs)`
+          `Fetched ${quotes.length} quotes from Alpha Vantage (all pairs)`,
         );
         return quotes;
       } else if (failed) {
         // Partial failure - return merged quotes
         const mergedQuotes = Array.from(quoteMap.values());
         this.logger.warn(
-          `Partial fetch: got ${quotes.length} new quotes, ${mergedQuotes.length} total (merged with cache)`
+          `Partial fetch: got ${quotes.length} new quotes, ${mergedQuotes.length} total (merged with cache)`,
         );
         return mergedQuotes;
       } else {
         // Some quotes but no failures (might be rate limited)
         this.logger.log(
-          `Fetched ${quotes.length}/${this.currencyPairs.length * 2} quotes from Alpha Vantage`
+          `Fetched ${quotes.length}/${
+            this.currencyPairs.length * 2
+          } quotes from Alpha Vantage`,
         );
         return quotes;
       }
@@ -185,14 +194,14 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
       // Complete failure but we have cached quotes
       this.logger.warn(
         `Alpha Vantage fetch failed completely. Using cached quotes from ${new Date(
-          alphaVantageQuoteCache.lastFetchedTimestamp
-        ).toISOString()} (${alphaVantageQuoteCache.lastQuotes.length} pairs)`
+          alphaVantageQuoteCache.lastFetchedTimestamp,
+        ).toISOString()} (${alphaVantageQuoteCache.lastQuotes.length} pairs)`,
       );
       return alphaVantageQuoteCache.lastQuotes;
     } else {
       // Complete failure and no cache
       this.logger.error(
-        "Could not fetch Alpha Vantage quotes and no previous quotes in cache."
+        "Could not fetch Alpha Vantage quotes and no previous quotes in cache.",
       );
       return [];
     }
@@ -201,7 +210,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
   private async fetchQuote(
     fromCurrency: string,
     toCurrency: string,
-    timestamp: number
+    timestamp: number,
   ): Promise<OTCQuote | null> {
     try {
       const response = await axios.get<AlphaVantageResponse>(this.baseUrl, {
@@ -219,7 +228,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
       // Check for API errors
       if (data["Error Message"]) {
         this.logger.error(
-          `Alpha Vantage error for ${fromCurrency} → ${toCurrency}: ${data["Error Message"]}`
+          `Alpha Vantage error for ${fromCurrency} → ${toCurrency}: ${data["Error Message"]}`,
         );
         return null;
       }
@@ -228,14 +237,14 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
         this.logger.warn(
           `Alpha Vantage rate limit or info: ${
             data["Note"] || data["Information"]
-          }`
+          }`,
         );
       }
 
       const exchangeRate = data["Realtime Currency Exchange Rate"];
       if (!exchangeRate) {
         this.logger.warn(
-          `No exchange rate data for ${fromCurrency} → ${toCurrency}`
+          `No exchange rate data for ${fromCurrency} → ${toCurrency}`,
         );
         return null;
       }
@@ -246,7 +255,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
 
       if (isNaN(askPrice) || isNaN(bidPrice) || isNaN(midPrice)) {
         this.logger.error(
-          `Invalid price data for ${fromCurrency} → ${toCurrency}`
+          `Invalid price data for ${fromCurrency} → ${toCurrency}`,
         );
         return null;
       }
@@ -281,16 +290,16 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
       if (axios.isAxiosError(error)) {
         if (error.code === "ECONNABORTED") {
           this.logger.warn(
-            `Timeout fetching ${fromCurrency} → ${toCurrency} from Alpha Vantage`
+            `Timeout fetching ${fromCurrency} → ${toCurrency} from Alpha Vantage`,
           );
         } else {
           this.logger.error(
-            `HTTP error fetching ${fromCurrency} → ${toCurrency}: ${error.message}`
+            `HTTP error fetching ${fromCurrency} → ${toCurrency}: ${error.message}`,
           );
         }
       } else {
         this.logger.error(
-          `Unexpected error fetching ${fromCurrency} → ${toCurrency}: ${error?.message}`
+          `Unexpected error fetching ${fromCurrency} → ${toCurrency}: ${error?.message}`,
         );
       }
       return null;
@@ -309,7 +318,7 @@ export class AlphaVantageProvider implements OtcQuoteProvider {
 
   private getSettlementMeta(
     fromCurrency: string,
-    toCurrency: string
+    toCurrency: string,
   ): OTCQuote["settlementMeta"] {
     // FX settlement is typically T+0 or T+1
     const isStablecoin =
