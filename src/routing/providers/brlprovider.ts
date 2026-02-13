@@ -88,7 +88,7 @@ export class BrlProvider implements OtcQuoteProvider, OnModuleInit {
       this.logger.debug(pairPaths);
 
       const response = await axios.get<AwesomeApiResponse>(
-        `${this.baseUrl}/${pairPaths}`,
+        `https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,EUR-USD`,
         {
           timeout: 5000, // 5s timeout
 
