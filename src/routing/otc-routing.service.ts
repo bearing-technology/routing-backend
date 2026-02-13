@@ -268,38 +268,30 @@ export class OtcRoutingService {
     }
   }
 
-  /**
-   * Fetch all quotes for a given pair from Redis (both OTC and DEX).
-   * Optimized: Uses SCAN instead of KEYS for better performance.
-   */
   private async loadQuotes(
     fromToken: string,
     toToken: string,
   ): Promise<MaybeQuote[]> {
     try {
       const allKeys: string[] = [];
-
-      // Load OTC quotes using SCAN (faster than KEYS)
       const otcPattern = RedisKey.otcQuote(fromToken, toToken, "*");
       const otcKeys = await this.scanKeys(otcPattern);
       allKeys.push(...otcKeys);
 
-      // Load DEX quotes - only check solana for speed (most common)
       const dexPattern = `routing:edge:solana:${fromToken}:${toToken}:dex:*`;
       const dexKeys = await this.scanKeys(dexPattern);
       allKeys.push(...dexKeys);
-      allKeys.push("otc:quotes:awesomeapi");
 
       if (!allKeys.length) return [];
 
-      // Batch fetch all quotes in parallel
+      // 3. Batch fetch all quotes
       const raw = await Redis.mget(allKeys);
+
       return raw
         .map((v) => {
           if (!v) return null;
           try {
-            const parsed = JSON.parse(v) as OTCQuote;
-            return parsed;
+            return JSON.parse(v) as OTCQuote;
           } catch (err) {
             this.logger.warn(`Failed to parse quote value: ${err?.message}`);
             return null;
@@ -307,9 +299,7 @@ export class OtcRoutingService {
         })
         .filter((q): q is OTCQuote => q !== null);
     } catch (error) {
-      this.logger.error(
-        `Failed to load quotes for ${fromToken} → ${toToken}: ${error?.message}`,
-      );
+      this.logger.error(`Failed to load quotes: ${error?.message}`);
       return [];
     }
   }
